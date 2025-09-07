@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Server - ข้าวพันธุ์พื้นเมืองเลย</title>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 3rem;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 500px;
+            margin: 2rem;
+        }
+        .logo {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+        h1 {
+            color: #2d5016;
+            margin-bottom: 1rem;
+            font-size: 2rem;
+        }
+        .status {
+            background: #d4edda;
+            color: #155724;
+            padding: 1rem;
+            border-radius: 10px;
+            border: 1px solid #c3e6cb;
+            margin: 1.5rem 0;
+            font-weight: 600;
+        }
+        .info {
+            background: #f8f9fa;
+            padding: 1.5rem;
+            border-radius: 10px;
+            margin: 1.5rem 0;
+            text-align: left;
+        }
+        .info h3 {
+            color: #495057;
+            margin-top: 0;
+        }
+        .info p {
+            margin: 0.5rem 0;
+            color: #6c757d;
+        }
+        .btn {
+            background: #27ae60;
+            color: white;
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 0.5rem;
+            transition: background 0.3s ease;
+        }
+        .btn:hover {
+            background: #219a52;
+        }
+        .btn-secondary {
+            background: #6c757d;
+        }
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+        .footer {
+            margin-top: 2rem;
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+        .timestamp {
+            color: #28a745;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🌾</div>
+        <h1>ระบบทำงานปกติ</h1>
+        
+        <div class="status">
+            ✅ Server Online - เซิร์ฟเวอร์พร้อมใช้งาน
+        </div>
+        
+        <div class="info">
+            <h3>📋 รายละเอียดการทดสอบ</h3>
+            <p><strong>โครงการ:</strong> ข้าวพันธุ์พื้นเมืองเลย</p>
+            <p><strong>เซิร์ฟเวอร์:</strong> XAMPP Apache</p>
+            <p><strong>Path:</strong> /loei-rice-ecommerce/</p>
+            <p><strong>เวลาทดสอบ:</strong> <span class="timestamp" id="timestamp"></span></p>
+            <p><strong>สถานะ:</strong> <span style="color: #28a745;">✅ พร้อมใช้งาน</span></p>
+        </div>
+        
+        <div>
+            <a href="index.php" class="btn">🏠 ไปหน้าแรก PHP</a>
+            <a href="admin/" class="btn btn-secondary">⚙️ หน้าผู้ดูแลระบบ</a>
+        </div>
+        
+        <div class="footer">
+            <p>หากเซิร์ฟเวอร์ทำงานปกติ คุณจะเห็นหน้านี้</p>
+            <p>เมื่อคลิก "ไปหน้าแรก PHP" แล้วไม่สามารถเข้าได้ แสดงว่ามีปัญหาที่ไฟล์ index.php</p>
+        </div>
+    </div>
+
+    <script>
+        // แสดงเวลาปัจจุบัน
+        document.getElementById('timestamp').textContent = new Date().toLocaleString('th-TH', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit'
+        });
+
+        // ทดสอบ JavaScript
+        console.log('✅ JavaScript ทำงานปกติ');
+        
+        // ทดสอบการเชื่อมต่อ index.php
+        setTimeout(function() {
+            fetch('index.php')
+                .then(response => {
+                    if (response.ok) {
+                        console.log('✅ index.php ตอบสนองปกติ');
+                        document.querySelector('.footer').innerHTML += '<p style="color: #28a745;">✅ index.php พร้อมใช้งาน</p>';
+                    } else {
+                        console.log('❌ index.php มีปัญหา: ' + response.status);
+                        document.querySelector('.footer').innerHTML += '<p style="color: #dc3545;">❌ index.php มีปัญหา (HTTP ' + response.status + ')</p>';
+                    }
+                })
+                .catch(error => {
+                    console.log('❌ ไม่สามารถเข้าถึง index.php: ' + error.message);
+                    document.querySelector('.footer').innerHTML += '<p style="color: #dc3545;">❌ ไม่สามารถเข้าถึง index.php</p>';
+                });
+        }, 1000);
+    </script>
+</body>
+</html>
