@@ -9,7 +9,7 @@ if (isset($_SESSION['admin_id'])) {
 
 // รวมไฟล์การตั้งค่า
 require_once '../config/database.php';
-require_once '../config/config.php';
+//require_once '../config/config.php';
 
 $error_message = '';
 $success_message = '';
@@ -385,7 +385,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             <div class="card-icon"></div>
             <div class="form-header">
                 <h1>ระบบจัดการ</h1>
-                <p>ข้าวพันธุ์พื้นเมืองเลย อนุรักษ์และสืบสานความเป็นไทย</p>
             </div>
 
             <?php if ($error_message): ?>

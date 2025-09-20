@@ -88,6 +88,12 @@ try {
     $featured_products = array();
     $new_products = array();
     $categories = array();
+    
+    // ประกาศตัวแปรที่จำเป็นสำหรับการแสดงผล
+    $user_data = null;
+    $is_logged_in = false;
+    $user_name = '';
+    $user_initial = 'G';
 }
 
 ?>

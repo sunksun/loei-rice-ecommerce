@@ -1,6 +1,30 @@
 <?php
 session_start();
-// เราไม่จำเป็นต้องเชื่อมต่อฐานข้อมูลในส่วน PHP แล้ว เพราะทุกอย่างจัดการโดย JavaScript
+
+// โหลด config สำหรับการจัดการ cart และ session
+require_once 'config/config.php';
+require_once 'config/database.php';
+
+// สร้าง CSRF token สำหรับการเรียก API
+$csrf_token = generateCSRFToken();
+
+// ตรวจสอบและล้างข้อมูล cart หมดอายุ
+function cleanExpiredCart() {
+    $cart_expiry = 7 * 24 * 60 * 60; // 7 วัน
+    
+    if (isset($_SESSION['cart_timestamp'])) {
+        if ((time() - $_SESSION['cart_timestamp']) > $cart_expiry) {
+            unset($_SESSION['cart_items']);
+            unset($_SESSION['cart_timestamp']);
+        }
+    }
+}
+
+// ทำความสะอาด cart หมดอายุ
+cleanExpiredCart();
+
+// อัปเดต cart timestamp
+$_SESSION['cart_timestamp'] = time();
 ?>
 <!DOCTYPE html>
 <html lang="th">
@@ -329,6 +353,18 @@ session_start();
 
     <div class="container page-header">
         <h1 class="page-title">ตะกร้าสินค้าของคุณ</h1>
+        
+        <?php if (isset($_GET['error'])): ?>
+            <div style="background: #f8d7da; color: #721c24; padding: 15px; margin: 15px 0; border: 1px solid #f5c6cb; border-radius: 5px; text-align: left;">
+                <strong>เกิดข้อผิดพลาด:</strong> <?php echo htmlspecialchars($_GET['error']); ?>
+            </div>
+        <?php endif; ?>
+        
+        <?php if (isset($_GET['success'])): ?>
+            <div style="background: #d4edda; color: #155724; padding: 15px; margin: 15px 0; border: 1px solid #c3e6cb; border-radius: 5px; text-align: left;">
+                <strong>สำเร็จ:</strong> <?php echo htmlspecialchars($_GET['success']); ?>
+            </div>
+        <?php endif; ?>
     </div>
 
     <main class="main-content">
@@ -373,6 +409,8 @@ session_start();
         let productDetails = [];
         let shippingCost = 0; // Set a default, can be changed later
         let discountAmount = 0;
+        const CSRF_TOKEN = '<?php echo $csrf_token; ?>';
+        const CART_EXPIRY_DAYS = 7;
 
         // --- 2. HELPER FUNCTIONS ---
         function formatPrice(price) {
@@ -387,8 +425,79 @@ session_start();
             }
         }
 
+        // ตรวจสอบและจัดการ cart expiry
+        function checkCartExpiry() {
+            const cartTimestamp = localStorage.getItem('cart_timestamp');
+            if (cartTimestamp) {
+                const daysSinceCreated = (Date.now() - parseInt(cartTimestamp)) / (1000 * 60 * 60 * 24);
+                if (daysSinceCreated > CART_EXPIRY_DAYS) {
+                    localStorage.removeItem('cart');
+                    localStorage.removeItem('cart_timestamp');
+                    cart = [];
+                    showNotification('ตะกร้าสินค้าหมดอายุแล้ว กรุณาเลือกสินค้าใหม่', 'warning');
+                    return false;
+                }
+            } else {
+                localStorage.setItem('cart_timestamp', Date.now().toString());
+            }
+            return true;
+        }
+
+        // แสดงการแจ้งเตือน
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.style.cssText = `
+                position: fixed; top: 20px; right: 20px; z-index: 10000;
+                padding: 15px 20px; border-radius: 5px; color: white;
+                background: ${type === 'warning' ? '#f39c12' : type === 'error' ? '#e74c3c' : '#27ae60'};
+                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            `;
+            notification.textContent = message;
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 5000);
+        }
+
+        // Validation ข้อมูล cart
+        function validateCartData() {
+            const validCart = [];
+            for (const item of cart) {
+                if (item.id && typeof item.id === 'number' && 
+                    item.quantity && typeof item.quantity === 'number' && item.quantity > 0) {
+                    validCart.push({
+                        id: parseInt(item.id),
+                        quantity: parseInt(item.quantity)
+                    });
+                }
+            }
+            
+            if (validCart.length !== cart.length) {
+                cart = validCart;
+                localStorage.setItem('cart', JSON.stringify(cart));
+                showNotification('ข้อมูลตะกร้าสินค้าไม่ถูกต้อง ได้ทำการแก้ไขแล้ว', 'warning');
+            }
+            return validCart.length > 0;
+        }
+
         // --- 3. CORE LOGIC ---
         async function loadCartDetails() {
+            // ตรวจสอบ cart expiry และ validate ข้อมูล
+            if (!checkCartExpiry() || !validateCartData()) {
+                updateCartIcon();
+                const cartItemsList = document.getElementById('cartItemsList');
+                const emptyCartEl = document.getElementById('emptyCart');
+                const clearCartBtn = document.getElementById('clearCartBtn');
+                
+                cartItemsList.innerHTML = '';
+                emptyCartEl.style.display = 'block';
+                clearCartBtn.style.display = 'none';
+                productDetails = [];
+                updateSummary();
+                return;
+            }
+
             updateCartIcon();
             const cartItemsList = document.getElementById('cartItemsList');
             const emptyCartEl = document.getElementById('emptyCart');
@@ -408,29 +517,60 @@ session_start();
             const productIds = cart.map(item => item.id);
 
             try {
-                const response = await fetch(`get_product_details.php?ids=${productIds.join(',')}`);
-                if (!response.ok) throw new Error(`Server responded with status: ${response.status}`);
+                // เพิ่ม CSRF token และ headers ที่ปลอดภัย
+                const url = `get_product_details.php?ids=${productIds.join(',')}`;
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`Server responded with status: ${response.status}`);
+                }
 
                 const productsFromServer = await response.json();
-                if (productsFromServer.error) throw new Error(productsFromServer.error);
+                
+                if (productsFromServer.error) {
+                    throw new Error(productsFromServer.error);
+                }
 
                 const productDetailsMap = new Map(productsFromServer.map(p => [parseInt(p.id), p]));
 
                 productDetails = cart.map(cartItem => {
                     const details = productDetailsMap.get(parseInt(cartItem.id));
-                    return details ? {
+                    if (!details) {
+                        showNotification(`สินค้า ID ${cartItem.id} ไม่พบในระบบ`, 'warning');
+                        return null;
+                    }
+                    
+                    // ตรวจสอบ stock availability
+                    if (details.availability === 'out_of_stock') {
+                        showNotification(`สินค้า "${details.name}" หมดสต็อก`, 'warning');
+                    }
+                    
+                    return {
                         ...cartItem,
                         ...details,
                         price: details.sale_price || details.price
-                    } : null;
+                    };
                 }).filter(item => item !== null);
+
+                // อัปเดต cart ถ้ามีสินค้าที่ไม่พบ
+                if (productDetails.length !== cart.length) {
+                    cart = productDetails.map(item => ({id: item.id, quantity: item.quantity}));
+                    localStorage.setItem('cart', JSON.stringify(cart));
+                }
 
                 renderCartItems();
                 updateSummary();
 
             } catch (error) {
                 console.error('Failed to load cart details:', error);
-                cartItemsList.innerHTML = `<p style="color:red;text-align:center;padding:2rem;">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>`;
+                showNotification('เกิดข้อผิดพลาดในการโหลดข้อมูลตะกร้าสินค้า', 'error');
+                cartItemsList.innerHTML = `<p style="color:red;text-align:center;padding:2rem;">เกิดข้อผิดพลาดในการโหลดข้อมูล กรุณาลองใหม่อีกครั้ง</p>`;
             }
         }
 

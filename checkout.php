@@ -1,31 +1,152 @@
 <?php
 session_start();
+require_once 'config/config.php'; // เพิ่มการโหลด config.php
 require_once 'config/database.php'; // เรียกใช้ไฟล์เชื่อมต่อฐานข้อมูล
+require_once 'error_handler.php'; // เพิ่ม error handler
+require_once 'stock_manager.php'; // เพิ่ม stock manager
 
 // ส่วนประมวลผลฟอร์ม (Process Form)
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // รับข้อมูลจากฟอร์ม
-    $first_name = trim($_POST['first_name']);
-    $last_name = trim($_POST['last_name']);
-    $address_line1 = trim($_POST['address_line1']);
-    $city = trim($_POST['city']);
-    $postal_code = trim($_POST['postal_code']);
-    $phone = trim($_POST['phone']);
-    $email = trim($_POST['email']);
-    $customer_notes = trim($_POST['customer_notes']);
+    // ตรวจสอบ CSRF token
+    $csrf_token = $_POST['csrf_token'] ?? '';
+    if (!verifyCSRFToken($csrf_token)) {
+        logActivity('customer', $_SESSION['user_id'] ?? null, 'checkout_csrf_failed', 'CSRF token validation failed from IP: ' . getUserIpAddress());
+        handleError('CSRF token validation failed', 'checkout', 'cart.php');
+    }
+
+    // ตรวจสอบ rate limiting สำหรับการสั่งซื้อ
+    $user_ip = getUserIpAddress();
+    $rate_limit_key = "order_rate_limit_" . md5($user_ip);
+    
+    if (isset($_SESSION[$rate_limit_key])) {
+        $requests = $_SESSION[$rate_limit_key];
+        if ($requests['count'] >= 5 && (time() - $requests['start_time']) < 3600) {
+            logActivity('customer', $_SESSION['user_id'] ?? null, 'checkout_rate_limited', 'Order rate limit exceeded from IP: ' . $user_ip);
+            handleError('Rate limit exceeded', 'checkout', 'cart.php');
+        }
+        
+        if ((time() - $requests['start_time']) >= 3600) {
+            $_SESSION[$rate_limit_key] = ['count' => 1, 'start_time' => time()];
+        } else {
+            $_SESSION[$rate_limit_key]['count']++;
+        }
+    } else {
+        $_SESSION[$rate_limit_key] = ['count' => 1, 'start_time' => time()];
+    }
+
+    // รับข้อมูลจากฟอร์มและทำ sanitization
+    $first_name = cleanInput($_POST['first_name'] ?? '');
+    $last_name = cleanInput($_POST['last_name'] ?? '');
+    $address_line1 = cleanInput($_POST['address_line1'] ?? '');
+    $city = cleanInput($_POST['city'] ?? '');
+    $postal_code = cleanInput($_POST['postal_code'] ?? '');
+    $phone = cleanInput($_POST['phone'] ?? '');
+    $email = cleanInput($_POST['email'] ?? '');
+    $customer_notes = cleanInput($_POST['customer_notes'] ?? '');
 
     // รับข้อมูลตะกร้าสินค้าที่ถูกส่งมาแบบซ่อน
-    $order_items_json = $_POST['order_items'];
-    $order_summary_json = $_POST['order_summary'];
+    $order_items_json = $_POST['order_items'] ?? '';
+    $order_summary_json = $_POST['order_summary'] ?? '';
+
+    // ตรวจสอบข้อมูล JSON
+    if (empty($order_items_json) || empty($order_summary_json)) {
+        handleError('Missing order data', 'checkout', 'cart.php');
+    }
 
     $items = json_decode($order_items_json, true);
     $summary = json_decode($order_summary_json, true);
 
-    // ตรวจสอบข้อมูลเบื้องต้น
-    if (empty($first_name) || empty($last_name) || empty($address_line1) || empty($city) || empty($postal_code) || empty($phone) || empty($email) || empty($items)) {
-        die("กรุณากรอกข้อมูลที่จำเป็นให้ครบถ้วน");
+    if (json_last_error() !== JSON_ERROR_NONE || !is_array($items) || !is_array($summary)) {
+        handleError('Invalid JSON data', 'checkout', 'cart.php');
     }
+
+    // Enhanced input validation using ErrorHandler
+    $validation_rules = [
+        'first_name' => [
+            'required' => true,
+            'max_length' => 50,
+            'label' => 'ชื่อ'
+        ],
+        'last_name' => [
+            'required' => true,
+            'max_length' => 50,
+            'label' => 'นามสกุล'
+        ],
+        'address_line1' => [
+            'required' => true,
+            'max_length' => 255,
+            'label' => 'ที่อยู่'
+        ],
+        'city' => [
+            'required' => true,
+            'max_length' => 100,
+            'label' => 'จังหวัด'
+        ],
+        'postal_code' => [
+            'required' => true,
+            'label' => 'รหัสไปรษณีย์'
+        ],
+        'phone' => [
+            'required' => true,
+            'type' => 'phone',
+            'label' => 'เบอร์โทรศัพท์'
+        ],
+        'email' => [
+            'required' => true,
+            'type' => 'email',
+            'max_length' => 255,
+            'label' => 'อีเมล'
+        ],
+        'customer_notes' => [
+            'required' => false,
+            'max_length' => 500,
+            'label' => 'หมายเหตุ'
+        ]
+    ];
+
+    $form_data = [
+        'first_name' => $first_name,
+        'last_name' => $last_name,
+        'address_line1' => $address_line1,
+        'city' => $city,
+        'postal_code' => $postal_code,
+        'phone' => $phone,
+        'email' => $email,
+        'customer_notes' => $customer_notes
+    ];
+
+    $validation_result = validateFormData($form_data, $validation_rules);
+
+    if (!$validation_result['valid']) {
+        $error_message = "ข้อมูลไม่ถูกต้อง: " . implode(", ", $validation_result['errors']);
+        logError($error_message, 'checkout_validation', $validation_result['errors']);
+        header("Location: checkout.php?error=" . urlencode($error_message));
+        exit();
+    }
+
+    // ตรวจสอบรหัสไปรษณีย์เพิ่มเติม
+    if (!preg_match('/^[0-9]{5}$/', $postal_code)) {
+        handleError('Invalid postal code format', 'checkout');
+    }
+
+    // ตรวจสอบว่ามีสินค้าในตะกร้าหรือไม่
+    if (empty($items)) {
+        handleError('Empty cart', 'checkout', 'cart.php');
+    }
+
+    // ตรวจสอบ stock availability ก่อนดำเนินการสั่งซื้อ (ใช้ StockManager)
+    $stock_check = checkCartStock($items);
+    
+    if (!$stock_check['success']) {
+        $error_message = "ไม่สามารถดำเนินการสั่งซื้อได้: " . implode(", ", $stock_check['errors']);
+        logError($error_message, 'checkout_stock_check', ['errors' => $stock_check['errors'], 'items' => $items]);
+        header("Location: cart.php?error=" . urlencode($error_message));
+        exit();
+    }
+    
+    // อัปเดต items ด้วยข้อมูลที่ validate แล้ว
+    $items = $stock_check['available_items'];
 
     try {
         $pdo = getDB();
@@ -83,12 +204,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             VALUES (:order_id, :product_id, :product_name, :product_price, :quantity, :total_price)
         ");
 
-        // 5. ตัดสต็อกสินค้า
-        $stmt_stock = $pdo->prepare("
-            UPDATE products SET stock_quantity = stock_quantity - :quantity WHERE id = :product_id
-        ");
-
+        // 5. บันทึกรายการสินค้าและตัดสต็อกแบบปลอดภัย (ใช้ StockManager)
+        $stock_manager = new StockManager();
+        
         foreach ($items as $item) {
+            // บันทึกรายการสินค้า
             $stmt_items->execute([
                 ':order_id' => $order_id,
                 ':product_id' => $item['id'],
@@ -97,11 +217,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ':quantity' => $item['quantity'],
                 ':total_price' => $item['price'] * $item['quantity']
             ]);
-            // ตัดสต็อก
-            $stmt_stock->execute([
-                ':quantity' => $item['quantity'],
-                ':product_id' => $item['id']
-            ]);
+            
+            // ตัดสต็อกด้วย StockManager
+            $deduct_result = $stock_manager->deductStock($item['id'], $item['quantity'], $order_number);
+            
+            if (!$deduct_result['success']) {
+                throw new Exception("ไม่สามารถตัดสต็อกสินค้า '{$item['name']}' ได้: " . $deduct_result['error']);
+            }
         }
 
         // หากทุกอย่างสำเร็จ ให้ยืนยันการทำรายการ
@@ -113,9 +235,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Exception $e) {
         // หากเกิดข้อผิดพลาด ให้ยกเลิกการทำรายการทั้งหมด
         $pdo->rollBack();
-        die("เกิดข้อผิดพลาดในการบันทึกคำสั่งซื้อ: " . $e->getMessage());
+        
+        // ใช้ ErrorHandler สำหรับจัดการ error
+        $order_data = [
+            'customer_name' => $first_name . ' ' . $last_name,
+            'email' => $email,
+            'items_count' => count($items),
+            'total_amount' => $summary['grandTotal'] ?? 0
+        ];
+        
+        logError($e, 'checkout', $order_data);
+        logActivity('customer', $_SESSION['user_id'] ?? null, 'checkout_failed', 'Checkout failed: ' . $e->getMessage());
+        
+        handleError($e, 'checkout');
     }
 }
+// สร้าง CSRF token สำหรับฟอร์ม
+$csrf_token = generateCSRFToken();
+
 // --- ส่วนที่ 1: เพิ่มฟังก์ชันนี้ไว้ที่ส่วนบนสุดของไฟล์ checkout.php ---
 // (วางไว้หลังบรรทัด require_once 'config/database.php';)
 
@@ -338,6 +475,19 @@ function getThaiProvinces()
 <body>
     <div class="container">
         <h1>ดำเนินการสั่งซื้อ</h1>
+        
+        <?php if (isset($_GET['error'])): ?>
+            <div style="background: #f8d7da; color: #721c24; padding: 15px; margin: 15px 0; border: 1px solid #f5c6cb; border-radius: 5px;">
+                <strong>เกิดข้อผิดพลาด:</strong> <?php echo htmlspecialchars($_GET['error']); ?>
+            </div>
+        <?php endif; ?>
+        
+        <?php if (isset($_GET['success'])): ?>
+            <div style="background: #d4edda; color: #155724; padding: 15px; margin: 15px 0; border: 1px solid #c3e6cb; border-radius: 5px;">
+                <strong>สำเร็จ:</strong> <?php echo htmlspecialchars($_GET['success']); ?>
+            </div>
+        <?php endif; ?>
+        
         <form id="checkoutForm" method="POST" action="checkout.php">
             <div class="checkout-layout">
                 <div class="form-section">
@@ -405,6 +555,7 @@ function getThaiProvinces()
 
                     <input type="hidden" name="order_items" id="order_items_json">
                     <input type="hidden" name="order_summary" id="order_summary_json">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf_token); ?>">
 
                     <button type="submit" class="submit-btn">ยืนยันการสั่งซื้อ</button>
                 </div>

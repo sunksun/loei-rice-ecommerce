@@ -70,11 +70,19 @@ try {
     // สถิติสินค้า
     $stats_stmt = $conn->query("SELECT 
         COUNT(*) as total,
-        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active,
-        SUM(CASE WHEN status = 'inactive' THEN 1 ELSE 0 END) as inactive,
-        SUM(CASE WHEN stock_quantity <= min_stock_level THEN 1 ELSE 0 END) as low_stock
+        COALESCE(SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END), 0) as active,
+        COALESCE(SUM(CASE WHEN status = 'inactive' THEN 1 ELSE 0 END), 0) as inactive,
+        COALESCE(SUM(CASE WHEN stock_quantity <= min_stock_level THEN 1 ELSE 0 END), 0) as low_stock
     FROM products");
     $stats = $stats_stmt->fetch(PDO::FETCH_ASSOC);
+    
+    // ป้องกัน null values
+    $stats = [
+        'total' => (int)($stats['total'] ?? 0),
+        'active' => (int)($stats['active'] ?? 0), 
+        'inactive' => (int)($stats['inactive'] ?? 0),
+        'low_stock' => (int)($stats['low_stock'] ?? 0)
+    ];
 } catch (Exception $e) {
     $products = [];
     $categories = [];
@@ -674,6 +682,7 @@ try {
                 <table class="table">
                     <thead>
                         <tr>
+                            <th style="width: 50px; text-align: center;">ลำดับ</th>
                             <th>รูปภาพ</th>
                             <th>ข้อมูลสินค้า</th>
                             <th>หมวดหมู่</th>
@@ -684,8 +693,9 @@ try {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php foreach ($products as $product): ?>
+                        <?php $index = 1; foreach ($products as $product): ?>
                             <tr>
+                                <td style="text-align: center; font-weight: bold; color: #666;"><?php echo $index++; ?></td>
                                 <td>
                                     <img src="<?php echo !empty($product['image_main']) ? '../uploads/products/' . $product['image_main'] : '../assets/images/no-image.jpg'; ?>"
                                         alt="<?php echo htmlspecialchars($product['name']); ?>"

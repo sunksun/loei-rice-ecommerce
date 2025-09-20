@@ -13,9 +13,9 @@ class Database
     // การตั้งค่าฐานข้อมูล
     private $host = 'localhost';           // โฮสต์ฐานข้อมูล
     private $port = 3306;                  // พอร์ตฐานข้อมูล
-    private $db_name = 'loei_rice_ecommerce';  // ชื่อฐานข้อมูล (แก้ไขให้ตรงกับ XAMPP)
-    private $username = 'root';            // ชื่อผู้ใช้ฐานข้อมูล (XAMPP ใช้ root)
-    private $password = '';                // รหัสผ่านฐานข้อมูล (XAMPP ไม่มีรหัสผ่าน)
+    private $db_name = 'loei_rice_ecommerce';      // ชื่อฐานข้อมูล (XAMPP local)
+    private $username = 'root';            // ชื่อผู้ใช้ฐานข้อมูล (XAMPP default)
+    private $password = '';                // รหัสผ่านฐานข้อมูล (XAMPP default - empty)
     private $charset = 'utf8mb4';          // Character set
 
     // ตัวแปรเก็บการเชื่อมต่อ
@@ -91,10 +91,10 @@ class Database
                 // ตั้งค่า SQL mode
                 $this->conn->exec("SET sql_mode = 'STRICT_TRANS_TABLES,NO_ZERO_DATE,NO_ZERO_IN_DATE,ERROR_FOR_DIVISION_BY_ZERO'");
 
-                // Log การเชื่อมต่อสำเร็จ (เฉพาะใน development mode)
-                if (defined('ENVIRONMENT') && ENVIRONMENT === 'development') {
-                    error_log("Database connection established successfully");
-                }
+                // Log การเชื่อมต่อสำเร็จ (ปิดไว้เพื่อลด error logs)
+                // if (defined('ENVIRONMENT') && ENVIRONMENT === 'development') {
+                //     error_log("Database connection established successfully");
+                // }
             } catch (PDOException $e) {
                 // จัดการ error การเชื่อมต่อ
                 $this->handleConnectionError($e);

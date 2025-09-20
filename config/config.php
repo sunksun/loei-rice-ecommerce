@@ -490,22 +490,33 @@ function logActivity($user_type, $user_id, $action, $description = '')
     try {
         require_once 'database.php';
         $db = Database::getInstance()->getConnection();
+        
+        // ตัดสินใจว่าจะใส่ใน column ไหนตาม user_type
+        $admin_id = null;
+        $customer_id = null;
+        
+        if ($user_type === 'admin') {
+            $admin_id = $user_id;
+        } else {
+            $customer_id = $user_id;
+        }
 
         $stmt = $db->prepare("
-            INSERT INTO activity_logs (user_type, user_id, action, description, ip_address, user_agent) 
+            INSERT INTO activity_logs (user_id, admin_id, action, details, ip_address, user_agent) 
             VALUES (?, ?, ?, ?, ?, ?)
         ");
 
         $stmt->execute([
-            $user_type,
-            $user_id,
+            $customer_id,
+            $admin_id,
             $action,
             $description,
             getUserIpAddress(),
             $_SERVER['HTTP_USER_AGENT'] ?? ''
         ]);
     } catch (Exception $e) {
-        error_log("Failed to log activity: " . $e->getMessage());
+        // ปิด error logging ชั่วคราวเพื่อลด noise
+        // error_log("Failed to log activity: " . $e->getMessage());
     }
 }
 

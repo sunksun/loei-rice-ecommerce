@@ -131,7 +131,6 @@ try {
     }
 
     // ดึงข้อมูลหมวดหมู่ทั้งหมด
-    $search = isset($_GET['search']) ? trim($_GET['search']) : '';
     $status_filter = isset($_GET['status']) ? $_GET['status'] : '';
 
     $sql = "SELECT c.*, 
@@ -139,11 +138,6 @@ try {
             FROM categories c WHERE 1=1";
 
     $params = [];
-
-    if (!empty($search)) {
-        $sql .= " AND (c.name LIKE :search OR c.description LIKE :search)";
-        $params[':search'] = "%$search%";
-    }
 
     if (!empty($status_filter)) {
         $sql .= " AND c.status = :status";
@@ -746,15 +740,9 @@ try {
 
         <!-- Controls -->
         <div class="controls">
-            <form method="GET" action="">
-                <div class="controls-row">
-                    <div class="search-filters">
-                        <div class="form-group">
-                            <label class="form-label">ค้นหา</label>
-                            <input type="text" name="search" class="form-control"
-                                placeholder="ชื่อหมวดหมู่, คำอธิบาย"
-                                value="<?php echo htmlspecialchars($search); ?>">
-                        </div>
+            <div class="controls-row">
+                <div class="search-filters">
+                    <form method="GET" action="">
                         <div class="form-group">
                             <label class="form-label">สถานะ</label>
                             <select name="status" class="form-control">
@@ -763,19 +751,13 @@ try {
                                 <option value="inactive" <?php echo $status_filter == 'inactive' ? 'selected' : ''; ?>>ปิดใช้งาน</option>
                             </select>
                         </div>
-                        <div class="form-group">
-                            <label class="form-label">&nbsp;</label>
-                            <button type="submit" class="form-control" style="background: #27ae60; color: white; border: none; cursor: pointer;">
-                                🔍 ค้นหา
-                            </button>
-                        </div>
-                    </div>
-
-                    <button type="button" class="add-btn" onclick="openModal('add')">
-                        ➕ เพิ่มหมวดหมู่ใหม่
-                    </button>
+                    </form>
                 </div>
-            </form>
+
+                <button type="button" class="add-btn" onclick="openModal('add')">
+                    ➕ เพิ่มหมวดหมู่ใหม่
+                </button>
+            </div>
         </div>
 
         <!-- Categories Table -->
@@ -792,7 +774,6 @@ try {
                     <thead>
                         <tr>
                             <th>ชื่อหมวดหมู่</th>
-                            <th>คำอธิบาย</th>
                             <th>จำนวนสินค้า</th>
                             <th>สถานะ</th>
                             <th>วันที่สร้าง</th>
@@ -804,9 +785,6 @@ try {
                             <tr id="category-row-<?php echo $category['id']; ?>">
                                 <td>
                                     <div class="category-name"><?php echo htmlspecialchars($category['name']); ?></div>
-                                </td>
-                                <td>
-                                    <div class="category-desc"><?php echo htmlspecialchars($category['description'] ?? 'ไม่มีคำอธิบาย'); ?></div>
                                 </td>
                                 <td>
                                     <span class="product-count"><?php echo number_format($category['product_count']); ?> รายการ</span>
@@ -1087,12 +1065,4 @@ try {
         descTextarea.setAttribute('maxlength', '500');
         updateCounter();
 
-        // ค้นหาแบบ real-time
-        let searchTimeout;
-        document.querySelector('input[name="search"]').addEventListener('input', function() {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                this.form.submit();
-            }, 1000);
-        });
     </script>
